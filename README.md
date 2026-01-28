@@ -1,6 +1,6 @@
 # Ekphrasis
 
-A full-stack Financial Analyst SaaS platform for Indian equity and mutual fund investors. Screen stocks with Screener.in-parity data, track portfolios at lot level, harvest tax losses, and analyze mutual fund performance against benchmarks.
+A full-stack Financial Analyst SaaS platform for Indian equity and mutual fund investors. Screen stocks with Screener.in-parity data, track portfolios at lot level, harvest tax losses, and analyze mutual fund performance against benchmark.
 
 ## Features
 
