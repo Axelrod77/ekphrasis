@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from jose import jwt
@@ -47,12 +47,17 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
     )
 
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
 @router.post("/login", response_model=TokenResponse)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == form_data.username))
+async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
 
-    if not user or not pwd_context.verify(form_data.password, user.hashed_password):
+    if not user or not pwd_context.verify(data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     return TokenResponse(
