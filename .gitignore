@@ -22,3 +22,6 @@ pgdata/
 
 # Claude
 .claude/
+
+# Docs
+README.md
