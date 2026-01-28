@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../api/client'
 
 interface StockFilters {
@@ -47,5 +47,18 @@ export function useStockDetail(symbol: string) {
       return data
     },
     enabled: !!symbol,
+  })
+}
+
+export function useSearchScrape() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (term: string) => {
+      const { data } = await api.post(`/stocks/search-scrape?term=${encodeURIComponent(term)}`)
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stocks'] })
+    },
   })
 }

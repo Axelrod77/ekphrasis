@@ -1,14 +1,43 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.stock import Stock
 from app.schemas.stock import StockListItem, StockDetail, StockListResponse
 from app.deps import get_current_user
 from app.models.user import User
+from app.services.scraper.screener_scraper import ScreenerScraper
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def _scrape_stock(symbol: str, db: AsyncSession) -> Stock:
+    scraper = ScreenerScraper(db)
+    stock = await scraper.scrape_stock(symbol.upper())
+    return stock
+
+
+async def _load_stock_detail(symbol: str, db: AsyncSession) -> Stock | None:
+    result = await db.execute(
+        select(Stock)
+        .where(Stock.symbol == symbol.upper())
+        .options(
+            selectinload(Stock.quarterly_results),
+            selectinload(Stock.annual_results),
+            selectinload(Stock.shareholding_patterns),
+            selectinload(Stock.peers),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+def _stock_to_detail(stock: Stock) -> StockDetail:
+    return StockDetail.model_validate(stock)
 
 
 @router.get("", response_model=StockListResponse)
@@ -77,41 +106,65 @@ async def get_stock(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Stock).where(Stock.symbol == symbol.upper()))
-    stock = result.scalar_one_or_none()
+    stock = await _load_stock_detail(symbol, db)
+
+    if not stock:
+        # Auto-scrape from screener.in
+        try:
+            await _scrape_stock(symbol, db)
+        except Exception:
+            logger.exception("Failed to scrape stock %s", symbol)
+            raise HTTPException(status_code=404, detail="Stock not found")
+        stock = await _load_stock_detail(symbol, db)
 
     if not stock:
         raise HTTPException(status_code=404, detail="Stock not found")
 
-    return StockDetail(
-        id=stock.id,
-        symbol=stock.symbol,
-        name=stock.name,
-        sector=stock.sector,
-        market_cap=stock.market_cap,
-        current_price=stock.current_price,
-        pe_ratio=stock.pe_ratio,
-        pb_ratio=stock.pb_ratio,
-        roce=stock.roce,
-        roe=stock.roe,
-        dividend_yield=stock.dividend_yield,
-        promoter_holding=stock.promoter_holding,
-        isin=stock.isin,
-        industry=stock.industry,
-        high_52w=stock.high_52w,
-        low_52w=stock.low_52w,
-        debt_to_equity=stock.debt_to_equity,
-        eps=stock.eps,
-        book_value=stock.book_value,
-        face_value=stock.face_value,
-        sales_growth_3y=stock.sales_growth_3y,
-        profit_growth_3y=stock.profit_growth_3y,
-        pros=stock.pros,
-        cons=stock.cons,
-        about=stock.about,
-        last_scraped_at=stock.last_scraped_at,
-        quarterly_results=[],
-        annual_results=[],
-        shareholding_patterns=[],
-        peers=[],
+    return _stock_to_detail(stock)
+
+
+@router.post("/scrape/{symbol}", response_model=StockDetail)
+async def scrape_stock(
+    symbol: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        await _scrape_stock(symbol, db)
+    except Exception:
+        logger.exception("Failed to scrape stock %s", symbol)
+        raise HTTPException(status_code=404, detail=f"Could not scrape stock '{symbol}' from screener.in")
+
+    stock = await _load_stock_detail(symbol, db)
+    if not stock:
+        raise HTTPException(status_code=404, detail="Stock not found after scraping")
+
+    return _stock_to_detail(stock)
+
+
+@router.post("/search-scrape", response_model=StockListResponse)
+async def search_scrape(
+    term: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Attempt to scrape the search term as a symbol if not found in DB."""
+    try:
+        await _scrape_stock(term, db)
+    except Exception:
+        logger.exception("Failed to scrape stock %s", term)
+        raise HTTPException(status_code=404, detail=f"Could not find or scrape '{term}'")
+
+    result = await db.execute(
+        select(Stock).where(Stock.symbol == term.upper())
+    )
+    stock = result.scalar_one_or_none()
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"Could not find '{term}' after scraping")
+
+    return StockListResponse(
+        items=[StockListItem.model_validate(stock)],
+        total=1,
+        page=1,
+        page_size=20,
     )

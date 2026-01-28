@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStocks } from '../hooks/useStocks'
+import { useStocks, useSearchScrape } from '../hooks/useStocks'
 import { Link } from 'react-router-dom'
 import { formatCurrency, formatNumber, formatMarketCap } from '../utils/format'
 
@@ -13,11 +13,19 @@ export default function StockScreener() {
   const [maxDe, setMaxDe] = useState<number | undefined>()
 
   const { data, isLoading } = useStocks({ page, search, sortBy, sortOrder, minRoce, maxPe, maxDebtToEquity: maxDe })
+  const searchScrape = useSearchScrape()
 
   const toggleSort = (col: string) => {
     if (sortBy === col) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
     else { setSortBy(col); setSortOrder('desc') }
   }
+
+  const handleScrape = () => {
+    if (!search.trim()) return
+    searchScrape.mutate(search.trim())
+  }
+
+  const showScrapeButton = search.trim() && !isLoading && data?.total === 0
 
   const SortHeader = ({ col, label }: { col: string; label: string }) => (
     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700"
@@ -39,6 +47,22 @@ export default function StockScreener() {
         <input placeholder="Max D/E" type="number" value={maxDe ?? ''} onChange={(e) => setMaxDe(e.target.value ? +e.target.value : undefined)}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-32 outline-none" />
       </div>
+
+      {showScrapeButton && (
+        <div className="flex items-center gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+          <span className="text-yellow-800">No stocks found for "{search}".</span>
+          <button
+            onClick={handleScrape}
+            disabled={searchScrape.isPending}
+            className="px-3 py-1.5 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700 disabled:opacity-50"
+          >
+            {searchScrape.isPending ? 'Fetching...' : 'Fetch from Screener.in'}
+          </button>
+          {searchScrape.isError && (
+            <span className="text-red-600">Could not find this stock on screener.in</span>
+          )}
+        </div>
+      )}
 
       <div className="bg-white rounded-lg border overflow-hidden">
         <div className="overflow-x-auto">
