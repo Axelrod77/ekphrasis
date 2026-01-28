@@ -9,11 +9,9 @@ from app.api import auth, stocks, watchlist, portfolio, mutual_funds, tax_harves
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-    except Exception as e:
-        print(f"Warning: could not create tables on startup: {e}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("Database tables created successfully")
     yield
 
 
